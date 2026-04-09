@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="clothing_categories">
+        <item>Select Category...</item>
+        <item>Tops / Shirts</item>
+        <item>Bottoms / Pants</item>
+        <item>Outerwear / Jackets</item>
+        <item>Footwear / Shoes</item>
+        <item>Wrist Wear / Rings</item>
+        <item>Head Wear</item>
+        <item>Face Wear</item>
+        <item>Tie / Scarf</item>
+    </string-array>
+
+    <string-array name="weather_options">
+        <item>Select Weather...</item>
+        <item>Summer</item>
+        <item>Winter</item>
+        <item>Rainy</item>
+        <item>Moderate</item>
+        <item>All Seasons</item>
+    </string-array>
+</resources>

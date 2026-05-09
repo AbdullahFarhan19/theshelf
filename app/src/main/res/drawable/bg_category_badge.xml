@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small Pill-Shaped Badge Used To Overlay The Category Name On Top Of Wardrobe Card Photos -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#CC1A1A1A"/>
+    <corners android:radius="20dp"/>
+</shape>

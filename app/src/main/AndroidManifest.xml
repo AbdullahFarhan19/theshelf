@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Camera Permission For Taking Photos Of Wardrobe Items -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Internet Permission Required For The Claude AI Outfit Suggestions Feature -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -13,18 +18,32 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
-        <activity
-            android:name=".MainScreen"
-            android:exported="false" />
+
+        <!-- Main Entry Point Activity — Shown When The App Launches For The First Time -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Primary Wardrobe Screen — Shown After The Welcome Screen -->
+        <activity
+            android:name=".MainScreen"
+            android:exported="false" />
+
+        <!-- Wardrobe History Screen — Accessible Via The Left Nav Bar Button -->
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false" />
+
+        <!-- AI Outfit Suggestions Screen — Accessible Via The Right Nav Bar Button -->
+        <activity
+            android:name=".SuggestionsActivity"
+            android:exported="false" />
+
     </application>
 
 </manifest>

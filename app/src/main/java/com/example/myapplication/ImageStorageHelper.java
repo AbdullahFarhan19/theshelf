@@ -18,13 +18,13 @@ public class ImageStorageHelper {
     // Returns null If The Save Failed For Any Reason
     public static String saveBitmapToInternalStorage(Context context, Bitmap bitmap, String fileName) {
         // Get Or Create The Dedicated Folder For Wardrobe Photos
-        File directory = new File(context.getFilesDir(), IMAGE_FOLDER);
+        File directory = new File(context.getFilesDir(), IMAGE_FOLDER); // Appends IMAGE_FOLDER To The Absolute Path Of Directory That Store The Images Taken
         if (!directory.exists()) {
             directory.mkdirs(); // mkdirs Creates All Missing Parent Directories As Well
         }
 
         // The Full File Object For The New Image
-        File imageFile = new File(directory, fileName + ".jpg");
+        File imageFile = new File(directory, fileName + ".jpg"); // Creates JPG Image Of The File In The Parent Directory
 
         try (FileOutputStream fos = new FileOutputStream(imageFile)) {
             // JPEG At 85 Quality — Good Balance Between File Size And Visual Fidelity

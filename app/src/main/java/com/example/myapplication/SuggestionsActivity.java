@@ -1,6 +1,9 @@
 package com.example.myapplication;
 
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Base64;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.EditText;
@@ -12,18 +15,23 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -39,11 +47,9 @@ public class SuggestionsActivity extends AppCompatActivity {
     private static final String KEY_SUGGESTION_2     = "suggestion_2";     // Cached Second Outfit Suggestion
     private static final String KEY_SUGGESTION_3     = "suggestion_3";     // Cached Third Outfit Suggestion
     private static final String KEY_WEATHER_TODAY    = "weather_today";    // Cached Weather The User Entered Last Time
-    private static final String GEMINI_API_KEY = "AIzaSyAYl-wBWTkgvQMRvU1Q2TdkbcBJXlrTg14"; // API Key
+    private static final String GEMINI_API_KEY       = "AIzaSyAYl-wBWTkgvQMRvU1Q2TdkbcBJXlrTg14"; // API Key
     // The Key Is Appended As A Query Parameter Rather Than A Header
-    private static final String GEMINI_API_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="
-                    + GEMINI_API_KEY;
+    private static final String GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_API_KEY;
 
     private WardrobeDatabase db;     // Access To The Wardrobe Data For Building The AI Prompt
     private SharedPreferences prefs; // Persistent Storage For Cached Suggestions
@@ -61,6 +67,7 @@ public class SuggestionsActivity extends AppCompatActivity {
     private ImageView btnBack;            // Back Arrow To Return To MainScreen
     private CardView btnGetSuggestions;   // "Get Suggestions" Primary Action Button
     private CardView btnRefresh;          // Refresh Button To Request Three New Suggestions Today
+    private RecyclerView rvOutfitImages1, rvOutfitImages2, rvOutfitImages3; // Recycler Views For Suggestion Cards
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,6 +92,9 @@ public class SuggestionsActivity extends AppCompatActivity {
         tvStatus          = findViewById(R.id.tv_status);
         btnGetSuggestions = findViewById(R.id.btn_get_suggestions);
         btnRefresh        = findViewById(R.id.btn_refresh);
+        rvOutfitImages1   = findViewById(R.id.rv_outfit_images_1);
+        rvOutfitImages2   = findViewById(R.id.rv_outfit_images_2);
+        rvOutfitImages3   = findViewById(R.id.rv_outfit_images_3);
 
         btnBack.setOnClickListener(v -> finish()); // Pop This Activity Off The Stack And Go Back To MainScreen
 
@@ -173,15 +183,18 @@ public class SuggestionsActivity extends AppCompatActivity {
         // Show The Loading Spinner While The Network Request Is In Flight
         showLoadingState();
 
+        // Capture A Final Reference To allItems So The Background Thread Can Access It
+        final List<WardrobeItem> itemsForAPI = allItems;
+
         // Fire The API Call On A Background Thread — Network Operations Must Never Run On The Main Thread
         new Thread(() -> { // Basically Like Hardware Threads, Divides CPU Time To Work On This While Other Processes Run Sequentially
-            String response = callGeminiAPI(prompt); // Blocking HTTP Call — Safe On A Background Thread
+            String response = callGeminiAPI(prompt, itemsForAPI); // Blocking HTTP Call — Safe On A Background Thread
             // Jump Back To The Main Thread To Touch Any UI Elements
             runOnUiThread(() -> handleAPIResponse(response, weatherInput));
         }).start();
     }
 
-    private String callGeminiAPI(String userPrompt) {
+    private String callGeminiAPI(String userPrompt, List<WardrobeItem> items) {
         try {
             URL url = new URL(GEMINI_API_URL); // The Key Is Already Baked Into The URL Constant Above
             HttpURLConnection conn = (HttpURLConnection) url.openConnection(); // Used To Send And Receive Data On The Web
@@ -191,12 +204,55 @@ public class SuggestionsActivity extends AppCompatActivity {
             conn.setConnectTimeout(30000); // 30 Second Connection Timeout
             conn.setReadTimeout(60000);    // 60 Second Read Timeout For Longer AI Responses
 
-            // Structure: { contents: [ { parts: [ { text: "prompt here" } ] } ] }, Required For Passing Data To Gemini
+            // Build The Parts Array — The Text Prompt Goes In First, Then One Image Part Per Item That Has A Photo
+            JSONArray partsArray = new JSONArray();
+
+            // First Part Is Always The Text Prompt
             JSONObject textPart = new JSONObject();
             textPart.put("text", userPrompt); // The Actual Prompt Text Goes Into The "text" Field
+            partsArray.put(textPart);
 
-            JSONArray partsArray = new JSONArray();
-            partsArray.put(textPart); // A Single Part Containing Our Prompt
+            // Append An Inline Image Part For Every Wardrobe Item That Has A Saved Photo On Disk
+            for (WardrobeItem item : items) {
+                String path = item.getImagePath();
+                if (path == null || path.isEmpty()) continue; // Skip Items With No Photo
+
+                File imageFile = new File(path);
+                if (!imageFile.exists()) continue; // Skip If The File Was Deleted Outside The App
+
+                // Decode And Compress The Saved JPEG To A Byte Array Suitable For Base64 Encoding
+                Bitmap bmp = BitmapFactory.decodeFile(path);
+                if (bmp == null) continue; // Skip Unreadable Files
+
+                // Scale Down Large Images Before Encoding To Keep The Request Payload Manageable
+                int maxDim = 512;
+                if (bmp.getWidth() > maxDim || bmp.getHeight() > maxDim) {
+                    float scale = (float) maxDim / Math.max(bmp.getWidth(), bmp.getHeight());
+                    bmp = Bitmap.createScaledBitmap(
+                            bmp,
+                            Math.round(bmp.getWidth()  * scale),
+                            Math.round(bmp.getHeight() * scale),
+                            true);
+                }
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                bmp.compress(Bitmap.CompressFormat.JPEG, 75, baos); // 75 Quality Keeps Size Small
+                String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+
+                // Label The Image So Gemini Knows Which Wardrobe Item It Belongs To
+                JSONObject labelPart = new JSONObject();
+                labelPart.put("text", "Photo of wardrobe item: " + item.getName());
+                partsArray.put(labelPart);
+
+                // Inline Image Data Part — Gemini Accepts JPEG Images As Base64 In The "inlineData" Field
+                JSONObject inlineData = new JSONObject();
+                inlineData.put("mimeType", "image/jpeg");
+                inlineData.put("data", base64Image);
+
+                JSONObject imagePart = new JSONObject();
+                imagePart.put("inlineData", inlineData);
+                partsArray.put(imagePart);
+            }
 
             JSONObject contentObject = new JSONObject();
             contentObject.put("parts", partsArray); // Each Content Object Holds An Array Of Parts
@@ -312,14 +368,39 @@ public class SuggestionsActivity extends AppCompatActivity {
         tvStatus.setText("Asking Gemini for outfit ideas...");
     }
 
+    // Returns Every Wardrobe Item Whose Name Appears In The Outfit Text —
+    // The Horizontal Strip Shows One Chip Per Matched Item
+    private List<WardrobeItem> findItemsForOutfit(String outfitText) {
+        List<WardrobeItem> matched = new ArrayList<>();
+        for (WardrobeItem item : db.getAllItems()) {
+            if (outfitText.toLowerCase().contains(item.getName().toLowerCase())) {
+                matched.add(item);
+            }
+        }
+        return matched;
+    }
+
+    // Wires A Horizontal Recyclerview To The Items Matched From An Outfit Text Block
+    private void bindOutfitRecycler(RecyclerView rv, String outfitText) {
+        List<WardrobeItem> items = findItemsForOutfit(outfitText);
+        rv.setLayoutManager(
+                new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
+        rv.setAdapter(new OutfitImageAdapter(items));
+        rv.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
     // Reveals The Three Suggestion Cards And Populates Them With The AI's Response
     private void displaySuggestions(String s1, String s2, String s3) {
-        progressBar.setVisibility(View.GONE);      // Spinner Is No Longer Needed
+        progressBar.setVisibility(View.GONE);
         tvStatus.setVisibility(View.GONE);
-        llSuggestions.setVisibility(View.VISIBLE); // Show The Cards Container
+        llSuggestions.setVisibility(View.VISIBLE);
         tvSuggestion1.setText(s1);
         tvSuggestion2.setText(s2);
         tvSuggestion3.setText(s3);
+
+        bindOutfitRecycler(rvOutfitImages1, s1);
+        bindOutfitRecycler(rvOutfitImages2, s2);
+        bindOutfitRecycler(rvOutfitImages3, s3);
     }
 
     // Shows A Human-Readable Error Message When The API Call Fails Or The Response Is Malformed

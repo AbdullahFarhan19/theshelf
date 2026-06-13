@@ -158,4 +158,18 @@ public class WardrobeDatabase extends SQLiteOpenHelper {
         db.close();
         return count;
     }
+
+    // =========================================================================
+    // Deletes every single row in the wardrobe_items table.
+    // Extremely useful for clearing out dummy data and resetting the app state.
+    // =========================================================================
+    public void deleteAllItems() {
+        SQLiteDatabase db = getWritableDatabase(); // Open the DB in write mode
+
+        // The delete() method takes the table name, a WHERE clause, and WHERE arguments.
+        // By passing null for the WHERE clause, we instruct SQLite to delete ALL rows.
+        db.delete(TABLE_ITEMS, null, null);
+
+        db.close(); // Close the connection to prevent memory leaks
+    }
 }

@@ -108,7 +108,7 @@ public class HistoryActivity extends AppCompatActivity {
                         .setPositiveButton("Remove", (dialog, which) -> {
                             ImageStorageHelper.deleteImageFromInternalStorage(item.getImagePath()); // Clean Up The Photo File First
                             db.deleteItem(item.getId()); // Then Remove The Database Row
-                            int idx = holder.getAdapterPosition();
+                            int idx = holder.getBindingAdapterPosition();
                             items.remove(idx); // Remove From The In-Memory List
                             notifyItemRemoved(idx); // Animate The Row Out Smoothly
                             Toast.makeText(HistoryActivity.this, "Item removed.", Toast.LENGTH_SHORT).show();

@@ -64,7 +64,6 @@ public class MainScreen extends AppCompatActivity {
     private TextView tvEmptyHint;
 
 
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
@@ -129,8 +128,8 @@ public class MainScreen extends AppCompatActivity {
         // Show Or Hide The Empty State Hint Depending On Whether The Wardrobe Has Items
         updateEmptyState();
 
-        // Long-Press A Card To Get The Option To Delete That Item From The Wardrobe
-        wardrobeAdapter.setOnItemLongClickListener((item, position) -> showDeleteConfirmation(item, position));
+        // Long-Press A Card To Get The Option To Edit Or Delete That Item From The Wardrobe
+        wardrobeAdapter.setOnItemLongClickListener((item, position) -> showItemOptions(item, position));
 
         ImageView btnHistory = findViewById(R.id.btn_history);
         CardView btnAdd = findViewById(R.id.btn_add); // CardViews Are A Way To Group Views
@@ -190,6 +189,21 @@ public class MainScreen extends AppCompatActivity {
         }
     }
 
+    // Shows A Choice Dialog On Long-Press — The User Can Either Edit Or Delete The Tapped Item
+    private void showItemOptions(WardrobeItem item, int position) {
+        new AlertDialog.Builder(this)
+                .setTitle(item.getName())
+                .setItems(new String[]{"Edit", "Delete"}, (dialog, which) -> {
+                    if (which == 0) {
+                        showEditItemDialog(item); // Open The Pre-Filled Edit Dialog For This Item
+                    } else {
+                        showDeleteConfirmation(item, position); // Confirm Before Permanently Removing
+                    }
+                })
+                .setNegativeButton("Cancel", null) // null Means The Dialog Just Closes With No Action
+                .show();
+    }
+
     // Shows A Confirmation Dialog Before Permanently Deleting An Item And Its Photo File
     private void showDeleteConfirmation(WardrobeItem item, int position) {
         new AlertDialog.Builder(this)
@@ -205,6 +219,132 @@ public class MainScreen extends AppCompatActivity {
                 })
                 .setNegativeButton("Cancel", null) // null Means The Dialog Just Closes With No Action
                 .show();
+    }
+
+    // Opens The Add-Item Dialog Pre-Filled With The Existing Item's Data So The User Can Change It
+    // On Save, The Old DB Row Is Deleted And A Fresh One Is Inserted With The Updated Values
+    private void showEditItemDialog(WardrobeItem item) {
+        LayoutInflater inflater = LayoutInflater.from(this);
+        View dialogView = inflater.inflate(R.layout.dialog_add_item, null);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setView(dialogView);
+        AlertDialog dialog = builder.create();
+
+        currentDialogPhotoZone        = dialogView.findViewById(R.id.dialog_photo_zone);
+        currentDialogPlaceholderUi    = dialogView.findViewById(R.id.dialog_photo_placeholder_ui);
+        currentDialogImagePreview     = dialogView.findViewById(R.id.dialog_image_preview);
+
+        EditText inputName            = dialogView.findViewById(R.id.dialog_input_name);
+        currentDialogSpinnerCategory  = dialogView.findViewById(R.id.dialog_spinner_category);
+        Spinner spinnerWeather        = dialogView.findViewById(R.id.dialog_spinner_weather);
+        Button btnCancel              = dialogView.findViewById(R.id.dialog_btn_cancel);
+        Button btnSave                = dialogView.findViewById(R.id.dialog_btn_save);
+
+        // Pre-Fill The Name Field With The Item's Current Name
+        inputName.setText(item.getName());
+
+        // Rebuild The Category Spinner The Same Way The Add Dialog Does
+        categoryItems = new ArrayList<>(Arrays.asList(
+                "Select Category...",
+                "Tops",
+                "Bottoms",
+                "Outerwear",
+                "Shoes",
+                "Wristwear",
+                "Headwear",
+                "Facewear",
+                "Neckwear",
+                "AI Suggestion: Pending..."
+        ));
+
+        categoryAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, categoryItems);
+        categoryAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        currentDialogSpinnerCategory.setAdapter(categoryAdapter);
+
+        // Pre-Select The Category That Matches The Item's Saved Category
+        int categoryIndex = categoryItems.indexOf(item.getCategory());
+        if (categoryIndex >= 0) currentDialogSpinnerCategory.setSelection(categoryIndex);
+
+        // Pre-Select The Weather Spinner To Match The Item's Saved Weather Tag
+        ArrayAdapter<CharSequence> weatherAdapter = (ArrayAdapter<CharSequence>)
+                spinnerWeather.getAdapter();
+        if (weatherAdapter != null) {
+            for (int i = 0; i < weatherAdapter.getCount(); i++) {
+                if (weatherAdapter.getItem(i).toString().equals(item.getWeather())) {
+                    spinnerWeather.setSelection(i);
+                    break;
+                }
+            }
+        }
+
+        // If The Item Already Has A Photo, Show It In The Preview Instead Of The Placeholder
+        if (item.getImagePath() != null && !item.getImagePath().isEmpty()) {
+            Bitmap existingBmp = android.graphics.BitmapFactory.decodeFile(item.getImagePath());
+            if (existingBmp != null) {
+                capturedBitmap = existingBmp; // Treat The Existing Photo As The Currently Captured Bitmap
+                currentDialogPlaceholderUi.setVisibility(View.GONE);
+                currentDialogImagePreview.setVisibility(View.VISIBLE);
+                currentDialogImagePreview.setImageBitmap(existingBmp);
+            }
+        } else {
+            capturedBitmap = null; // No Existing Photo — Start Fresh
+        }
+
+        // Tapping The Photo Zone Still Lets The User Replace The Photo With A New Camera Shot
+        currentDialogPhotoZone.setOnClickListener(v ->
+                permissionLauncher.launch(android.Manifest.permission.CAMERA));
+
+        btnCancel.setOnClickListener(v -> {
+            capturedBitmap = null; // Discard Any Newly Taken Photo If The User Cancels
+            dialog.dismiss();
+        });
+
+        btnSave.setOnClickListener(v -> {
+            String itemName = inputName.getText().toString().trim();
+            String category = currentDialogSpinnerCategory.getSelectedItem().toString();
+            String weather  = spinnerWeather.getSelectedItem().toString();
+
+            if (itemName.isEmpty() || category.equals("Select Category...")) {
+                Toast.makeText(this, "Please provide a name and category", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Decide What Image Path To Store — Keep The Old One Unless A New Photo Was Taken
+            String savedImagePath = item.getImagePath(); // Default: Reuse The Existing Photo
+
+            boolean newPhotoTaken = capturedBitmap != null
+                    && (item.getImagePath() == null
+                    || !android.graphics.BitmapFactory.decodeFile(item.getImagePath())
+                    .sameAs(capturedBitmap)); // True Only When The Bitmap Is Brand New
+
+            if (newPhotoTaken) {
+                // Delete The Old Photo File Before Saving The New One To Avoid Orphaned Files
+                ImageStorageHelper.deleteImageFromInternalStorage(item.getImagePath());
+                String fileName = ImageStorageHelper.generateUniqueFileName();
+                savedImagePath = ImageStorageHelper.saveBitmapToInternalStorage(
+                        this, capturedBitmap, fileName);
+            }
+
+            // Remove The Old DB Row And Insert A Fresh One With The Updated Fields
+            db.deleteItem(item.getId());
+            String colorToUse = (capturedColor != null) ? capturedColor : item.getColor(); // Keep Old Color If No New Photo
+            WardrobeItem updatedItem = new WardrobeItem(
+                    itemName, category, weather, colorToUse, savedImagePath);
+            long insertedId = db.insertItem(updatedItem);
+
+            if (insertedId != -1) {
+                Toast.makeText(this, "\"" + itemName + "\" updated!", Toast.LENGTH_SHORT).show();
+                capturedBitmap = null; // Clear After A Successful Save
+                capturedColor  = null;
+                refreshWardrobeGrid(); // Redraw The Grid So The Edited Item Reflects The New Values
+                dialog.dismiss();
+            } else {
+                Toast.makeText(this, "Failed to update item. Please try again.", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        dialog.show();
     }
 
     private void showAddItemDialog() {
@@ -334,33 +474,29 @@ public class MainScreen extends AppCompatActivity {
 
     // It Returns The Actual Text Name Of The Category That The AI Has Detected Or Predicted
     private String mapAILabelToCategoryName(String aiLabel) {
-        if (aiLabel.contains("shirt") || aiLabel.contains("top") || aiLabel.contains("blouse")) {
-            return "Tops";
-        }
-        if (aiLabel.contains("pants") || aiLabel.contains("jeans") || aiLabel.contains("shorts") || aiLabel.contains("trousers")) {
-            return "Bottoms";
-        }
-        if (aiLabel.contains("jacket") || aiLabel.contains("coat") || aiLabel.contains("outerwear") || aiLabel.contains("hoodie")) {
-            return "Outerwear";
-        }
-        if (aiLabel.contains("shoe") || aiLabel.contains("footwear") || aiLabel.contains("sneaker") || aiLabel.contains("boot")) {
-            return "Shoes";
-        }
-        if (aiLabel.contains("wrist wear") || aiLabel.contains("ring") || aiLabel.contains("watch") || aiLabel.contains("bracelet")) {
-            return "Wristwear";
-        }
-        if (aiLabel.contains("headwear") || aiLabel.contains("hat") || aiLabel.contains("cap") || aiLabel.contains("crown") || aiLabel.contains("headband")) {
-            return "Headwear";
-        }
-        if (aiLabel.contains("glasses") || aiLabel.contains("facewear") || aiLabel.contains("earrings") || aiLabel.contains("nose ring")) {
-            return "Facewear";
-        }
-        if (aiLabel.contains("scarf") || aiLabel.contains("tie") || aiLabel.contains("chain") || aiLabel.contains("neckwear") || aiLabel.contains("necklace")) {
-            return "Neckwear";
+        // Some Possible AI Detected Labels
+        String[] clothingKeywords = {
+                "shirt", "top", "blouse",
+                "pants", "jeans", "shorts", "trousers",
+                "jacket", "coat", "outerwear", "hoodie",
+                "shoe", "footwear", "sneaker", "boot",
+                "wrist wear", "ring", "watch", "bracelet",
+                "headwear", "hat", "cap", "crown", "headband",
+                "glasses", "facewear", "earrings", "nose ring",
+                "scarf", "tie", "chain", "neckwear", "necklace"
+        };
+
+        aiLabel = aiLabel.toLowerCase(); // Convert To LowerCase To Avoid Case Mismatch
+
+        for (String keyword : clothingKeywords) {
+            if (aiLabel.contains(keyword)) {
+                return keyword; // Returns the exact matching string
+            }
         }
 
         return null; // If Not Detected
     }
+
     // Samples A Grid Of Pixels Across The Bitmap And Returns The Most Frequently Occurring Named Color
     private String detectDominantColor(Bitmap bitmap) {
         int width = bitmap.getWidth();
@@ -412,8 +548,8 @@ public class MainScreen extends AppCompatActivity {
 
         // Map Hue Angle To A Named Color Band
         if (hue < 15 || hue >= 345) return "Red";
-        if (hue < 40)  return "Orange";
-        if (hue < 70)  return "Yellow";
+        if (hue < 40) return "Orange";
+        if (hue < 70) return "Yellow";
         if (hue < 150) return "Green";
         if (hue < 195) return "Cyan";
         if (hue < 260) return "Blue";
@@ -422,4 +558,6 @@ public class MainScreen extends AppCompatActivity {
 
         return "Unknown";
     }
+
+
 }

@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- Internet Permission Required For The Claude AI Outfit Suggestions Feature -->
+    <!-- Internet Permission Required For The Gemini AI Outfit Suggestions Feature -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
